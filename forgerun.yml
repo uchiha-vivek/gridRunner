@@ -1,0 +1,9 @@
+# Example build definition. Put this file at the root of any repository you point
+# ForgeRun at; the runner reads it after checkout.
+jobs:
+  test:
+    image: alpine:3.20
+    commands:
+      - echo "building $FORGERUN_COMMIT on $FORGERUN_BRANCH"
+      - ls -la
+      - echo "all good"

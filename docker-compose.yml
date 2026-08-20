@@ -1,0 +1,85 @@
+# Redis and PostgreSQL run here and only here: nothing needs to be installed on
+# the host. The API and scheduler run as containers too; the runner agent runs on
+# your machine because it needs access to the Docker engine.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: forgerun
+      POSTGRES_PASSWORD: forgerun
+      POSTGRES_DB: forgerun
+    ports:
+      # Published so `go run ./cmd/api` works from the host. Override the host
+      # port if something already listens on it: POSTGRES_PORT=5433
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forgerun"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      # Override with REDIS_PORT if the host already runs a Redis on 6379.
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    command: ["/usr/local/bin/api"]
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://forgerun:forgerun@postgres:5432/forgerun?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      SERVER_PORT: "8080"
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      # Mount the .pem yourself if you use the path form; the key never belongs
+      # in the image.
+      GITHUB_APP_PRIVATE_KEY_PATH: ${GITHUB_APP_PRIVATE_KEY_PATH:-}
+      RUNNER_REGISTRATION_TOKEN: ${RUNNER_REGISTRATION_TOKEN:-dev-registration-token}
+      FORGERUN_SERVER_URL: ${FORGERUN_SERVER_URL:-http://localhost:8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  scheduler:
+    build: .
+    command: ["/usr/local/bin/scheduler"]
+    environment:
+      DATABASE_URL: postgres://forgerun:forgerun@postgres:5432/forgerun?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      HEARTBEAT_TIMEOUT: ${HEARTBEAT_TIMEOUT:-45s}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:

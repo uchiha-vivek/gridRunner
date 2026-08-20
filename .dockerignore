@@ -1,0 +1,21 @@
+# The Dockerfile does `COPY . .`, so anything left here is baked into a build
+# layer. Secrets must be excluded first.
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Not needed to compile the binaries, and slows the build context down.
+.git
+.gitignore
+/bin/
+/dist/
+docs/
+tests/
+*_test.go
+*.md
+LICENSE
+Makefile
+docker-compose.yml
+.dockerignore
